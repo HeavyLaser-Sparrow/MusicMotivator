@@ -23,9 +23,10 @@ A desktop application that motivates you by playing music as a reward for comple
 - **Tkinter:** Comes bundled with most Python installations.  
 - **Pygame:** Used for audio playback.
 
-## **If you want to skip all the steps, just do ./songs (on linux) after downloading and unzipping the release**
+## **If you want to skip all the steps and are on Linux, just do ./songs (on linux) after downloading and unzipping the release**
 ## **This method does not require python or any dependencies**
 ## **On windows, use the .exe file (click on it). Both are zipped files recognizable by their names. You must unzip them to use**
+## **All methods shown are known to work on Linux Debian 12**
 
 ## Installation
 
