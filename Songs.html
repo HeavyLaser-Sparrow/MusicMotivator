@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Lesson Music Motivator</title>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.23.2/full/pyodide.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; background-color: #222; color: white; }
+        h1 { color: #1db954; }
+        input, button, select { margin: 10px; padding: 10px; font-size: 16px; }
+        audio { margin-top: 20px; width: 100%; }
+        #songList { text-align: left; margin: 20px auto; width: 60%; background-color: #333; padding: 10px; border-radius: 8px; }
+        .song-item { padding: 5px; border-bottom: 1px solid #444; color: #ddd; }
+        .current { color: #1db954; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🎵 Lesson Music Motivator</h1>
+
+    <!-- Lesson Tracking -->
+    <label>Lessons Completed (5 min each):</label>
+    <input type="number" id="lessons" value="0">
+    <br>
+    <label>Exercises Completed (10 min each):</label>
+    <input type="number" id="exercises" value="0">
+    <br>
+    <label>Labs Completed (20 min each):</label>
+    <input type="number" id="labs" value="0">
+    <br>
+    <button onclick="addMinutes()">Add Minutes</button>
+    <p id="minutesLeft">Minutes Left: 0</p>
+
+    <!-- Playlist and Player Controls -->
+    <input type="file" id="fileInput" multiple accept="audio/mp3">
+    <button onclick="loadSongs()">Load Playlist</button>
+    <div id="songList"></div>
+
+    <p id="currentSongLabel">Current Song: None</p>
+
+    <button onclick="playSong()">▶️ Play</button>
+    <button onclick="pauseSong()">⏸️ Pause</button>
+    <button onclick="resumeSong()">▶️ Resume</button>
+    <button onclick="stopSong()">⏹️ Stop</button>
+    <br>
+    <label>Playback Mode:</label>
+    <select id="playbackMode">
+        <option value="Normal">Normal</option>
+        <option value="Shuffle">Shuffle</option>
+        <option value="Repeat">Repeat</option>
+    </select>
+
+    <audio id="audioPlayer" controls></audio>
+
+    <script>
+        let pyodideReadyPromise = loadPyodide();
+        let minutesBank = parseFloat(localStorage.getItem("minutesBank")) || 0;
+        let songList = [];
+        let currentSongIndex = -1;
+        let lastPlayedIndices = [];
+        let playbackInterval = null;
+
+        document.getElementById("minutesLeft").innerText = `Minutes Left: ${minutesBank.toFixed(2)}`;
+
+        async function addMinutes() {
+            let pyodide = await pyodideReadyPromise;
+            let lessons = parseInt(document.getElementById("lessons").value) || 0;
+            let exercises = parseInt(document.getElementById("exercises").value) || 0;
+            let labs = parseInt(document.getElementById("labs").value) || 0;
+
+            let result = await pyodide.runPythonAsync(`
+                def calculate_minutes(lessons, exercises, labs):
+                    return lessons * 5 + exercises * 10 + labs * 20
+                calculate_minutes(${lessons}, ${exercises}, ${labs})
+            `);
+
+            minutesBank += parseFloat(result);
+            saveProgress();
+            updateMinutesLabel();
+        }
+
+        function loadSongs() {
+            let files = document.getElementById("fileInput").files;
+            if (files.length === 0) {
+                alert("No MP3 files selected.");
+                return;
+            }
+            songList = Array.from(files).map(file => ({
+                name: file.name,
+                url: URL.createObjectURL(file)
+            }));
+            currentSongIndex = -1;
+            lastPlayedIndices = [];
+            displaySongList();
+            alert(`Loaded ${files.length} songs.`);
+        }
+
+        function displaySongList() {
+            let listDiv = document.getElementById("songList");
+            listDiv.innerHTML = "";
+            songList.forEach((song, index) => {
+                let songDiv = document.createElement("div");
+                songDiv.className = "song-item" + (index === currentSongIndex ? " current" : "");
+                songDiv.innerText = song.name;
+                listDiv.appendChild(songDiv);
+            });
+        }
+
+        function playSong() {
+            if (minutesBank <= 0) {
+                alert("Not enough minutes to play music.");
+                return;
+            }
+            if (songList.length === 0) {
+                alert("No songs loaded.");
+                return;
+            }
+            selectNextSong();
+            playSongByIndex(currentSongIndex);
+        }
+
+        function selectNextSong() {
+            let mode = document.getElementById("playbackMode").value;
+            if (mode === "Shuffle") {
+                let availableIndices = songList.map((_, i) => i).filter(i => !lastPlayedIndices.includes(i));
+                if (availableIndices.length === 0) {
+                    lastPlayedIndices = [];
+                    availableIndices = songList.map((_, i) => i);
+                }
+                currentSongIndex = availableIndices[Math.floor(Math.random() * availableIndices.length)];
+                lastPlayedIndices.push(currentSongIndex);
+            } else if (mode === "Normal") {
+                currentSongIndex = (currentSongIndex + 1) < songList.length ? currentSongIndex + 1 : -1;
+            }
+        }
+
+        function playSongByIndex(index) {
+            if (index === -1) {
+                stopSong();
+                return;
+            }
+            let audioPlayer = document.getElementById("audioPlayer");
+            audioPlayer.src = songList[index].url;
+            document.getElementById("currentSongLabel").innerText = `Current Song: ${songList[index].name}`;
+            displaySongList();
+            audioPlayer.play();
+            startTimer();
+        }
+
+        function pauseSong() {
+            document.getElementById("audioPlayer").pause();
+        }
+
+        function resumeSong() {
+            document.getElementById("audioPlayer").play();
+        }
+
+        function stopSong() {
+            let audioPlayer = document.getElementById("audioPlayer");
+            audioPlayer.pause();
+            audioPlayer.currentTime = 0;
+            clearInterval(playbackInterval);
+            document.getElementById("currentSongLabel").innerText = "Current Song: None";
+            displaySongList();
+        }
+
+        function startTimer() {
+            clearInterval(playbackInterval);
+            playbackInterval = setInterval(() => {
+                let audioPlayer = document.getElementById("audioPlayer");
+                if (!audioPlayer.paused && !audioPlayer.ended) {
+                    minutesBank = Math.max(0, minutesBank - 1);
+                    saveProgress();
+                    updateMinutesLabel();
+                    if (minutesBank <= 0) stopSong();
+                }
+            }, 60000); // 1 minute real-time = 1 minute deducted
+        }
+
+        function saveProgress() {
+            localStorage.setItem("minutesBank", minutesBank.toFixed(2));
+        }
+
+        function updateMinutesLabel() {
+            document.getElementById("minutesLeft").innerText = `Minutes Left: ${minutesBank.toFixed(2)}`;
+        }
+
+        document.getElementById("audioPlayer").addEventListener("ended", function() {
+            let mode = document.getElementById("playbackMode").value;
+            if (mode === "Repeat") {
+                playSongByIndex(currentSongIndex);
+            } else {
+                playSong();
+            }
+        });
+    </script>
+</body>
+</html>
